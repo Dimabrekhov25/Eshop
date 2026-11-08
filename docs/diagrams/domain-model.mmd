@@ -1,0 +1,322 @@
+erDiagram
+    direction LR
+    %% R = required; O = optional / nullable. PK = primary key; FK = foreign key; UK = unique.
+    %% MVP assumptions: one language, one store currency, one stock location, one shipment per order.
+    %% User stores account credentials. UserProfile and AdminProfile share User.id as their primary key.
+    %% Each User may have zero or one profile of each type; both profiles may coexist.
+    %% Registration creates a UserProfile; staff access requires an active AdminProfile and an active User.
+    %% AdminProfile.role is a single staff-role enum; staff may also shop using the same account.
+    %% Being logged in is session/request state, not a profile type. Guests have no User row.
+    %% Cart has exactly one owner: userId OR guestId. Guest orders still require contact and address details.
+    %% shippingMethod is an enum on Order; fees and the free-shipping threshold are application settings.
+    %% ProductVariant is a unique product/color/size combination and carries the sellable SKU.
+    %% ProductVariantPrice stores the one current price, not price history; Inventory stores one stock balance.
+    %% An active sellable variant requires a price row and an inventory row; a draft may omit them.
+    %% Color and Size are shared dictionaries; ProductImage.colorId must match a variant color of that product.
+    %% ProductMaterial stores the many-to-many composition; each percentage is positive and at most 100.
+    %% Composition percentages must sum to 100 before publishing a product.
+    %% Care, origin, fit and the size guide remain simple Product fields.
+    %% Product belongs to at most one seasonal Collection; Essentials uses Product.isEssential.
+    %% Archived-price restrictions are application rules; order prices always remain purchase snapshots.
+    %% Create an awaiting-payment Order and decrease Inventory.stockQuantity atomically.
+    %% Its OrderItems represent held units until paymentExpiresAt; a normal Cart does not reserve stock.
+    %% Payment success keeps the stock deduction; cancellation or expiry restores it exactly once.
+    %% Payment callbacks and expiry jobs coordinate order state and Inventory changes atomically.
+    %% An expired order must not be confirmed from a late payment callback without reconciling stock/payment.
+    %% Online orders require a payment deadline; pickup can use a configured pickup-point address.
+    %% Order shippingMethod, address fields and OrderItem snapshot fields stay unchanged by catalog edits.
+    %% Monetary OrderItem fields use the Order currency; taxes/discounts are fixed at checkout.
+    %% Required dates depend on state: paidAt, shippedAt, deliveredAt, cancelledAt, expiredAt.
+    %% Review user and product must match the purchased OrderItem; one review per order line.
+    %% Composite UNIQUE: ProductVariant(productId,colorId,sizeId), CartItem(cartId,variantId), WishlistItem(userId,productId).
+    %% ProductMaterial has a composite primary key; each profile, price and stock row uses its parent ID as its key.
+    %% Active stock alerts are unique by variant and normalized email; external payment IDs are unique per provider.
+    %% Check promo eligibility and usage limits atomically; Order stores the used code and discount snapshot.
+    %% Products and their variants referenced by pending orders use hiding/soft deletion; historical orders keep snapshots.
+    %% Content and media use text/URLs; there are no JSON fields and no README.
+    %% Returns, repairs, chat, multiple warehouses, multiple currencies and translations can be added later.
+
+    %% ACCOUNTS
+    User {
+        uuid id PK "R"
+        string email UK "R"
+        string passwordHash "R"
+        boolean isActive "R"
+        datetime createdAt "R"
+    }
+
+    UserProfile {
+        uuid userId PK, FK "R"
+        string name "R"
+        string phone "O"
+    }
+
+    AdminProfile {
+        uuid userId PK, FK "R"
+        string displayName "R"
+        string role "R; ADMIN, CONTENT_MANAGER, SUPPORT, WAREHOUSE"
+        boolean isActive "R"
+    }
+
+    %% CATALOG
+    Category {
+        uuid id PK "R"
+        uuid parentId FK "O; null for a root category"
+        string name "R"
+        string slug UK "R"
+    }
+
+    Collection {
+        uuid id PK "R"
+        string name "R"
+        string slug UK "R"
+        string story "O"
+        string imageUrl "O"
+        boolean isArchived "R"
+    }
+
+    Color {
+        uuid id PK "R"
+        string name "R"
+        string code UK "R"
+        string hexCode "O"
+    }
+
+    Size {
+        uuid id PK "R"
+        string code UK "R; XS, S, M, L, XL, 38, 40, etc."
+        string name "R"
+        int sortOrder "R"
+    }
+
+    Material {
+        uuid id PK "R"
+        string name "R"
+        string code UK "R"
+    }
+
+    Product {
+        uuid id PK "R"
+        uuid categoryId FK "R"
+        uuid collectionId FK "O"
+        string name "R"
+        string slug UK "R"
+        string description "O"
+        string gender "R; MEN, WOMEN, UNISEX"
+        string fit "O"
+        decimal fabricWeightGsm "O"
+        decimal modelHeightCm "O"
+        uuid modelSizeId FK "O; size worn by the model"
+        string sizeGuide "O; plain text or HTML"
+        string originCountry "O"
+        string careInstructions "O"
+        boolean isEssential "R"
+        string status "R; DRAFT, PUBLISHED, HIDDEN"
+        datetime createdAt "R"
+    }
+
+    ProductMaterial {
+        uuid productId PK, FK "R"
+        uuid materialId PK, FK "R"
+        decimal percentage "R; percentage of this material in the product"
+    }
+
+    ProductVariant {
+        uuid id PK "R"
+        uuid productId FK "R"
+        uuid colorId FK "R"
+        uuid sizeId FK "R"
+        string sku UK "R"
+        boolean isActive "R"
+    }
+
+    ProductVariantPrice {
+        uuid variantId PK, FK "R"
+        string currency "R; store currency"
+        decimal price "R"
+        decimal oldPrice "O"
+    }
+
+    Inventory {
+        uuid variantId PK, FK "R"
+        int stockQuantity "R; available units in the single stock location"
+        datetime updatedAt "R"
+    }
+
+    ProductImage {
+        uuid id PK "R"
+        uuid productId FK "R"
+        uuid colorId FK "O; null means shared by all colors"
+        string url "R"
+        string altText "O"
+        int sortOrder "R"
+    }
+
+    %% CART
+    Cart {
+        uuid id PK "R"
+        uuid userId FK "O; XOR guestId"
+        uuid guestId "O; XOR userId; anonymous cookie identifier, not FK"
+        uuid promoCodeId FK "O"
+        string status "R; ACTIVE, CHECKED_OUT, MERGED"
+        datetime updatedAt "R"
+    }
+
+    CartItem {
+        uuid id PK "R"
+        uuid cartId FK "R"
+        uuid variantId FK "R"
+        int quantity "R"
+    }
+
+    PromoCode {
+        uuid id PK "R"
+        string code UK "R"
+        string discountType "R; PERCENT, FIXED"
+        decimal discountValue "R; fixed amount uses store currency"
+        decimal minOrderAmount "O; store currency"
+        int usageLimit "O"
+        datetime startsAt "R"
+        datetime expiresAt "O"
+        boolean isActive "R"
+    }
+
+    %% ORDERS
+    Order {
+        uuid id PK "R"
+        string number UK "R"
+        uuid userId FK "O; null for guest checkout"
+        uuid promoCodeId FK "O"
+        string email "R"
+        string recipientName "R"
+        string phone "R"
+        string countryCode "R"
+        string city "R"
+        string postalCode "R"
+        string addressLine1 "R"
+        string addressLine2 "O"
+        string shippingMethod "R; COURIER, PICKUP"
+        string status "R; AWAITING_PAYMENT, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, EXPIRED"
+        string currency "R; store currency at purchase"
+        decimal subtotal "R"
+        decimal discountTotal "R"
+        decimal shippingTotal "R"
+        decimal taxTotal "R"
+        decimal total "R"
+        string promoCodeSnapshot "O"
+        string carrier "O"
+        string trackingNumber "O"
+        datetime createdAt "R"
+        datetime paymentExpiresAt "O; required while awaiting payment"
+        datetime shippedAt "O"
+        datetime deliveredAt "O"
+        datetime cancelledAt "O"
+        datetime expiredAt "O"
+    }
+
+    OrderItem {
+        uuid id PK "R"
+        uuid orderId FK "R"
+        uuid variantId FK "O"
+        string skuSnapshot "R"
+        string productNameSnapshot "R"
+        string colorSnapshot "R"
+        string sizeSnapshot "R"
+        decimal unitPrice "R; order currency"
+        int quantity "R"
+        decimal discountTotal "R; order currency"
+        decimal taxTotal "R; order currency"
+        decimal total "R; order currency"
+    }
+
+    Payment {
+        uuid id PK "R"
+        uuid orderId FK "R"
+        string provider "R"
+        string providerPaymentId "O"
+        decimal amount "R"
+        string currency "R"
+        string status "R; PENDING, PAID, FAILED, CANCELLED"
+        datetime createdAt "R"
+        datetime paidAt "O"
+    }
+
+    %% DISCOVERY
+    WishlistItem {
+        uuid id PK "R"
+        uuid userId FK "R"
+        uuid productId FK "R"
+        datetime createdAt "R"
+    }
+
+    Review {
+        uuid id PK "R"
+        uuid userId FK "R"
+        uuid productId FK "R"
+        uuid orderItemId FK, UK "R"
+        int rating "R; 1..5"
+        string text "R"
+        string fitRating "O; SMALL, TRUE_TO_SIZE, LARGE"
+        string status "R; PENDING, APPROVED, REJECTED"
+        datetime createdAt "R"
+    }
+
+    StockAlert {
+        uuid id PK "R"
+        uuid variantId FK "R"
+        string email "R"
+        datetime createdAt "R"
+        datetime notifiedAt "O"
+    }
+
+    %% CONTENT-SUPPORT
+    Page {
+        uuid id PK "R"
+        string slug UK "R; about, shipping, returns, care, repair"
+        string title "R"
+        string content "R; plain text or HTML"
+        boolean isPublished "R"
+    }
+
+    JournalArticle {
+        uuid id PK "R"
+        string slug UK "R"
+        string title "R"
+        string summary "O"
+        string content "R; product links can be included in the text"
+        string imageUrl "O"
+        datetime publishedAt "O; null means draft"
+    }
+
+    %% RELATIONSHIPS
+    Category ||..o{ Product : contains
+    Category |o..o{ Category : has_subcategories
+    Collection |o..o{ Product : contains
+    Product ||..o{ ProductVariant : has_variants
+    Product ||..o{ ProductImage : has_photos
+    User |o..o{ Cart : owns
+    PromoCode |o..o{ Cart : applied_to
+    Cart ||..o{ CartItem : contains
+    ProductVariant ||..o{ CartItem : added_as
+    User |o..o{ Order : places
+    PromoCode |o..o{ Order : used_in
+    Order ||..|{ OrderItem : contains
+    ProductVariant |o..o{ OrderItem : purchased_as
+    Order ||..o{ Payment : has_attempts
+    User ||..o{ WishlistItem : saves
+    Product ||..o{ WishlistItem : saved_as
+    User ||..o{ Review : writes
+    Product ||..o{ Review : has_reviews
+    OrderItem ||..o| Review : reviewed_as
+    ProductVariant ||..o{ StockAlert : watched_by
+    User ||--o| UserProfile : has_customer_profile
+    User ||--o| AdminProfile : has_staff_profile
+    Size |o..o{ Product : worn_by_model
+    Product ||--o{ ProductMaterial : has_composition
+    Material ||--o{ ProductMaterial : included_in
+    Color ||..o{ ProductVariant : defines_color
+    Size ||..o{ ProductVariant : defines_size
+    ProductVariant ||--o| ProductVariantPrice : has_current_price
+    ProductVariant ||--o| Inventory : has_stock
+    Color |o..o{ ProductImage : shown_in
+

@@ -1,0 +1,113 @@
+erDiagram
+    direction LR
+    %% R = required; O = optional / nullable. PK = primary key; FK = foreign key; UK = unique.
+    %% MVP assumptions: one language, one store currency, one stock location, one shipment per order.
+    %% User stores account credentials. UserProfile and AdminProfile share User.id as their primary key.
+    %% Each User may have zero or one profile of each type; both profiles may coexist.
+    %% Registration creates a UserProfile; staff access requires an active AdminProfile and an active User.
+    %% AdminProfile.role is a single staff-role enum; staff may also shop using the same account.
+    %% Being logged in is session/request state, not a profile type. Guests have no User row.
+    %% Cart has exactly one owner: userId OR guestId. Guest orders still require contact and address details.
+    %% shippingMethod is an enum on Order; fees and the free-shipping threshold are application settings.
+    %% ProductVariant is a unique product/color/size combination and carries the sellable SKU.
+    %% ProductVariantPrice stores the one current price, not price history; Inventory stores one stock balance.
+    %% An active sellable variant requires a price row and an inventory row; a draft may omit them.
+    %% Color and Size are shared dictionaries; ProductImage.colorId must match a variant color of that product.
+    %% ProductMaterial stores the many-to-many composition; each percentage is positive and at most 100.
+    %% Composition percentages must sum to 100 before publishing a product.
+    %% Care, origin, fit and the size guide remain simple Product fields.
+    %% Product belongs to at most one seasonal Collection; Essentials uses Product.isEssential.
+    %% Archived-price restrictions are application rules; order prices always remain purchase snapshots.
+    %% Create an awaiting-payment Order and decrease Inventory.stockQuantity atomically.
+    %% Its OrderItems represent held units until paymentExpiresAt; a normal Cart does not reserve stock.
+    %% Payment success keeps the stock deduction; cancellation or expiry restores it exactly once.
+    %% Payment callbacks and expiry jobs coordinate order state and Inventory changes atomically.
+    %% An expired order must not be confirmed from a late payment callback without reconciling stock/payment.
+    %% Online orders require a payment deadline; pickup can use a configured pickup-point address.
+    %% Order shippingMethod, address fields and OrderItem snapshot fields stay unchanged by catalog edits.
+    %% Monetary OrderItem fields use the Order currency; taxes/discounts are fixed at checkout.
+    %% Required dates depend on state: paidAt, shippedAt, deliveredAt, cancelledAt, expiredAt.
+    %% Review user and product must match the purchased OrderItem; one review per order line.
+    %% Composite UNIQUE: ProductVariant(productId,colorId,sizeId), CartItem(cartId,variantId), WishlistItem(userId,productId).
+    %% ProductMaterial has a composite primary key; each profile, price and stock row uses its parent ID as its key.
+    %% Active stock alerts are unique by variant and normalized email; external payment IDs are unique per provider.
+    %% Check promo eligibility and usage limits atomically; Order stores the used code and discount snapshot.
+    %% Products and their variants referenced by pending orders use hiding/soft deletion; historical orders keep snapshots.
+    %% Content and media use text/URLs; there are no JSON fields and no README.
+    %% Returns, repairs, chat, multiple warehouses, multiple currencies and translations can be added later.
+    %% Entities without fields are references to other areas.
+
+    %% ORDERS
+    Order {
+        uuid id PK "R"
+        string number UK "R"
+        uuid userId FK "O; null for guest checkout"
+        uuid promoCodeId FK "O"
+        string email "R"
+        string recipientName "R"
+        string phone "R"
+        string countryCode "R"
+        string city "R"
+        string postalCode "R"
+        string addressLine1 "R"
+        string addressLine2 "O"
+        string shippingMethod "R; COURIER, PICKUP"
+        string status "R; AWAITING_PAYMENT, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED, EXPIRED"
+        string currency "R; store currency at purchase"
+        decimal subtotal "R"
+        decimal discountTotal "R"
+        decimal shippingTotal "R"
+        decimal taxTotal "R"
+        decimal total "R"
+        string promoCodeSnapshot "O"
+        string carrier "O"
+        string trackingNumber "O"
+        datetime createdAt "R"
+        datetime paymentExpiresAt "O; required while awaiting payment"
+        datetime shippedAt "O"
+        datetime deliveredAt "O"
+        datetime cancelledAt "O"
+        datetime expiredAt "O"
+    }
+
+    OrderItem {
+        uuid id PK "R"
+        uuid orderId FK "R"
+        uuid variantId FK "O"
+        string skuSnapshot "R"
+        string productNameSnapshot "R"
+        string colorSnapshot "R"
+        string sizeSnapshot "R"
+        decimal unitPrice "R; order currency"
+        int quantity "R"
+        decimal discountTotal "R; order currency"
+        decimal taxTotal "R; order currency"
+        decimal total "R; order currency"
+    }
+
+    Payment {
+        uuid id PK "R"
+        uuid orderId FK "R"
+        string provider "R"
+        string providerPaymentId "O"
+        decimal amount "R"
+        string currency "R"
+        string status "R; PENDING, PAID, FAILED, CANCELLED"
+        datetime createdAt "R"
+        datetime paidAt "O"
+    }
+
+    %% OTHER AREAS
+    User
+    PromoCode
+    ProductVariant
+    Review
+
+    %% RELATIONSHIPS
+    User |o..o{ Order : places
+    PromoCode |o..o{ Order : used_in
+    Order ||..|{ OrderItem : contains
+    ProductVariant |o..o{ OrderItem : purchased_as
+    Order ||..o{ Payment : has_attempts
+    OrderItem ||..o| Review : reviewed_as
+
