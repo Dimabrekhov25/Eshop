@@ -1,4 +1,4 @@
-package org.infrastructure.persistence.catalog;
+package catalog;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;

@@ -4,7 +4,6 @@ import catalog.enums.Gender;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -12,7 +11,7 @@ class CatalogBehaviorTest {
     @Test
     void galleryPreservesExistingImageAndRejectsDuplicates() {
         Product product = product();
-        ProductImage image = new ProductImage("/front.jpg", "Front", 0, product.getId());
+        ProductImage image = new ProductImage("/front.jpg", "Front", 0, product);
 
         product.addImage(image);
 
@@ -28,7 +27,7 @@ class CatalogBehaviorTest {
     @Test
     void galleryRejectsImageOwnedByAnotherProduct() {
         Product product = product();
-        ProductImage image = new ProductImage("/front.jpg", "Front", 0, UUID.randomUUID());
+        ProductImage image = new ProductImage("/front.jpg", "Front", 0, product());
 
         assertThrows(IllegalArgumentException.class, () -> product.addImage(image));
         assertTrue(product.getImages().isEmpty());
@@ -36,7 +35,7 @@ class CatalogBehaviorTest {
 
     @Test
     void rejectedStockCorrectionDoesNotChangeAvailableQuantity() {
-        Inventory inventory = new Inventory(UUID.randomUUID(), 3);
+        Inventory inventory = new Inventory(variant(), 3);
 
         assertThrows(IllegalArgumentException.class, () -> inventory.setStockQuantity(-1));
         assertEquals(3, inventory.getStockQuantity());
@@ -47,9 +46,8 @@ class CatalogBehaviorTest {
 
     @Test
     void materialShareMustBePositiveAndCannotExceedOneHundredPercent() {
-        UUID productId = UUID.randomUUID();
-        UUID materialId = UUID.randomUUID();
-        ProductMaterial material = new ProductMaterial(productId, materialId, new BigDecimal("95"));
+        ProductMaterial material = new ProductMaterial(
+            product(), new Material("Cotton", "COTTON"), new BigDecimal("95"));
 
         assertThrows(IllegalArgumentException.class, () -> material.setPercentage(BigDecimal.ZERO));
         assertThrows(IllegalArgumentException.class,
@@ -61,6 +59,11 @@ class CatalogBehaviorTest {
     }
 
     private Product product() {
-        return new Product(UUID.randomUUID(), "Essential T-Shirt", "essential-t-shirt", Gender.UNISEX);
+        return new Product(new Category("Clothing", "clothing"),
+            "Essential T-Shirt", "essential-t-shirt", Gender.UNISEX);
+    }
+
+    private ProductVariant variant() {
+        return new ProductVariant(product(), new Color("Black", "BLACK"), new Size("M", "Medium", 1), "SKU");
     }
 }
