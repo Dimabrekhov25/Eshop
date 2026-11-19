@@ -2,6 +2,7 @@ package api.catalog;
 
 import api.catalog.dto.CategoryRequest;
 import org.application.catalog.command.CreateCategoryCommand;
+import org.application.catalog.command.UpdateCategoryCommand;
 import org.application.catalog.dto.CategoryResult;
 import org.application.catalog.service.CategoryService;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,35 @@ public class CategoryController {
         return ResponseEntity
                 .created(URI.create("/api/categories/" + result.id()))
                 .body(result);
-
     }
+    @PutMapping("/{id}")
+        public CategoryResult update(
+                @PathVariable("id") UUID id,
+                @RequestBody CategoryRequest categoryRequest
+        )
+        {
+            return categoryService.update(new UpdateCategoryCommand(
+                    id,
+                    categoryRequest.name(),
+                    categoryRequest.slug(),
+                    categoryRequest.parentId()
+            ));
+        }
+
+    @DeleteMapping("/{id}")
+    public void delete(
+            @PathVariable("id") UUID id
+    )
+    {
+         categoryService.delete(id);
+    }
+    @GetMapping("/{id}")
+    public CategoryResult findById(
+            @PathVariable("id") UUID id
+    )
+    {
+        return categoryService.findById(id);
+    }
+
+
 }
