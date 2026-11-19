@@ -11,7 +11,7 @@ import java.util.UUID;
 @Repository
 public class JpaCategoryRepository implements CategoryRepository {
     private final SpringDataCategoryRepository repository;
-    private JpaCategoryRepository (SpringDataCategoryRepository repository){
+    public JpaCategoryRepository (SpringDataCategoryRepository repository){
         this.repository = repository;
     }
     @Override
