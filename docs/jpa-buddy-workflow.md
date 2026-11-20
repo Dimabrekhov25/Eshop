@@ -4,16 +4,15 @@
 
 ```text
 domain/src/main/java/...
-    Business models and rules; no JPA dependencies.
+    Business models, JPA annotations and rules in the same classes.
+    accounts/User.java
+    catalog/Category.java, Product.java, ProductMaterialId.java, ...
+    cart/Cart.java, orders/Order.java, discovery/Review.java, content/Page.java, ...
+    common/BaseEntity.java
 
 infrastructure/src/main/java/org/infrastructure/persistence/
     PersistenceConfiguration.java
-    accounts/*Entity.java
-    catalog/*Entity.java
-    cart/*Entity.java
-    orders/*Entity.java
-    discovery/*Entity.java
-    content/*Entity.java
+    Repository implementations belong here when CRUD is added.
 
 infrastructure/src/main/resources/db/migration/
     V1__init_shop.sql
@@ -44,8 +43,9 @@ migration just to restructure its version history.
 4. Hibernate builds the persistence model and validates it against the migrated
    database with ddl-auto=validate. This is not a complete validator for every
    CHECK constraint, index or database-specific feature.
-5. Application services call persistence adapters inside transactions; mappers
-   translate between domain objects and JPA entities.
+5. Application services call repositories inside transactions and work directly
+   with domain/JPA objects. DTO mapping prepares the API response; there is no
+   second persistence model to map to or from.
 
 Flyway applies SQL. It does not infer Java changes. Hibernate maps entities and
 associations. It can generate a DDL draft but does not replace a reviewed migration
@@ -54,21 +54,23 @@ need IntelliJ or the plugin.
 
 ## Current relationship mapping
 
-- ProductEntity.category is @ManyToOne; CategoryEntity.products is the inverse
+- Product.category is @ManyToOne; Category.products is the inverse
   @OneToMany(mappedBy="category"). Both map products.category_id.
-- CategoryEntity.parent/children map the self-referencing category hierarchy.
-- UserProfileEntity.user and AdminProfileEntity.user are @OneToOne with @MapsId:
+- Category.parent/children map the self-referencing category hierarchy.
+- UserProfile.user and AdminProfile.user are @OneToOne with @MapsId:
   user_id is both the profile primary key and a foreign key to users.id.
-- InventoryEntity.variant and ProductVariantPriceEntity.variant use the same
+- Inventory.variant and ProductVariantPrice.variant use the same
   shared-primary-key pattern for variant_id.
-- ProductMaterialEntity has @EmbeddedId ProductMaterialId and two @ManyToOne
+- ProductMaterial has @EmbeddedId ProductMaterialId and two @ManyToOne
   associations with @MapsId("productId") / @MapsId("materialId"). This represents
   many products using many materials, with percentage stored on each link.
-- ReviewEntity.orderItem is @OneToOne because an order line can have at most one
-  review. OrderItemEntity.variant remains optional; its @OnDelete(SET_NULL) matches
+- Review.orderItem is @OneToOne because an order line can have at most one
+  review. OrderItem.variant remains optional; its @OnDelete(SET_NULL) matches
   the existing FK so purchased snapshot fields survive physical variant deletion.
 - No associations cascade deletion of users, categories, materials or products.
   Deletion and soft-delete semantics must be implemented explicitly in use cases.
+- Product.images cascades PERSIST/MERGE and uses orphanRemoval for owned gallery
+  image rows, so the existing addImage/removeImage methods persist their effects.
 
 ## Adding JPA Buddy later
 
@@ -83,16 +85,18 @@ PostgreSQL datasource for localhost:15432, database eshop_local, using the exist
 account. This IDE datasource is for development tools; Spring Boot continues to
 use application.properties and its own password configuration.
 
-JPA Buddy enables features per module based on dependencies. Work with the Entity
-classes and migration directory in infrastructure, where JPA and Flyway already
-exist. Choose that persistence model, not the plain domain classes, as the source.
+JPA Buddy enables features per module based on dependencies. Work with the annotated
+classes in domain as the model source. The migration destination remains
+infrastructure/src/main/resources/db/migration; the model and SQL destination
+are in different Gradle modules. If the IDE offers a default directory under
+domain, select the infrastructure directory explicitly.
 
 ## Normal change workflow
 
 1. Bring the local comparison database to the current migration version. JPA
    validation alone does not initialize an empty schema; Flyway must have run.
-2. Change the infrastructure entity mapping to describe the desired state.
-   Align domain/use-case changes as appropriate.
+2. Change the annotated domain model to describe the desired state.
+   Align use-case changes as appropriate.
 3. In the IDE generate a Flyway versioned migration with Source = Model and
    Target = the local database or a model snapshot of the previous version.
 4. Review the generated SQL. Preserve deliberate SQL-only constraints/indexes;
@@ -104,7 +108,7 @@ exist. Choose that persistence model, not the plain domain classes, as the sourc
    is identical, no migration should be necessary.
 6. Apply the migration through Flyway; let Hibernate validate the result. Test both
    a fresh database and upgrade from the preceding migration when changing schema.
-7. Commit entity/domain changes, the migration and relevant tests together.
+7. Commit model changes, the migration and relevant tests together.
 
 Avoid letting Hibernate update the comparison database before generating the
 diff: the generator would then see the already changed schema instead of the

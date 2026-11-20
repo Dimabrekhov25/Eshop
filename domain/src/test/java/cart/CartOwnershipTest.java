@@ -1,5 +1,6 @@
 package cart;
 
+import accounts.User;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -11,19 +12,19 @@ class CartOwnershipTest {
     void rejectsMissingOrAmbiguousOwner() {
         assertThrows(IllegalArgumentException.class, () -> new Cart(null, null));
         assertThrows(IllegalArgumentException.class,
-            () -> new Cart(UUID.randomUUID(), UUID.randomUUID()));
+            () -> new Cart(new User("user@example.com", "hash"), UUID.randomUUID()));
     }
 
     @Test
     void assigningGuestCartToAccountReplacesOwnerWithoutReplacingCart() {
         Cart cart = Cart.forGuest(UUID.randomUUID());
         UUID cartId = cart.getId();
-        UUID userId = UUID.randomUUID();
+        User user = new User("user@example.com", "hash");
 
-        cart.assignToUser(userId);
+        cart.assignToUser(user);
 
         assertEquals(cartId, cart.getId());
-        assertEquals(userId, cart.getUserId());
+        assertSame(user, cart.getUser());
         assertNull(cart.getGuestId());
     }
 
@@ -35,6 +36,6 @@ class CartOwnershipTest {
         assertThrows(NullPointerException.class, () -> cart.assignToUser(null));
 
         assertEquals(guestId, cart.getGuestId());
-        assertNull(cart.getUserId());
+        assertNull(cart.getUser());
     }
 }

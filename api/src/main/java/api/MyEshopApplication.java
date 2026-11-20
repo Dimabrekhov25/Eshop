@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 
-@SpringBootApplication( scanBasePackages = {"api", "org.infrastructure"})
+@SpringBootApplication( scanBasePackages = {"api", "org.infrastructure", "org.application"})
 public class MyEshopApplication {
 
     public static void main(String[] args) {

@@ -1,8 +1,14 @@
 # Persistence and database initialization
 
-The domain module remains independent of JPA. Its 25 persistent models have separate
-`*Entity` classes under `org.infrastructure.persistence`. `Product.images` is stored
-in `product_images`, not in a second column or a serialized list.
+The domain module contains the application's 25 JPA entities. Each class combines
+business behavior and database mapping; there are no separate `*Entity` copies,
+domain-to-persistence mappers or restore factories. `Product.images` is stored in
+`product_images`, not in a second column or a serialized list.
+
+The domain module depends on Jakarta Persistence and Hibernate for the mapping
+annotations. It does not depend on Spring Boot starters or infrastructure.
+Infrastructure owns entity scanning, future repository implementations, the
+PostgreSQL driver and Flyway migrations. API owns runtime configuration.
 
 ## How the schema is created
 
@@ -11,7 +17,7 @@ in `product_images`, not in a second column or a serialized list.
 3. Start `api.MyEshopApplication` or run `:api:bootRun`.
 
 Spring Boot discovers `PersistenceConfiguration` through the API component scan.
-Its `@EntityScan` discovers all persistence packages. Flyway applies
+Its `@EntityScan` explicitly discovers the six domain packages. Flyway applies
 `infrastructure/src/main/resources/db/migration/V1__init_shop.sql` before Hibernate
 validates the mapped tables using the existing `ddl-auto=validate` setting.
 The existing single PostgreSQL account and `public` schema are used.
@@ -25,8 +31,12 @@ subsequent changes go in V2, V3, etc.
 
 ## Mapping choices
 
-- BaseJpaEntity supplies UUID, creation/update instants and the soft-delete flag.
-  UUIDs and audit timestamps continue to be supplied by application/domain code.
+- BaseEntity is a @MappedSuperclass supplying UUID, creation/update instants and
+  the soft-delete flag. New objects receive their UUID and initial timestamps in
+  the constructor. Hibernate fills the same fields from the database when loading
+  an existing object. Persisted fields are not final and have no public ID setter.
+  @PreUpdate refreshes updatedAt when Hibernate updates an entity. There is no
+  @GeneratedValue or second ID-generation step in infrastructure.
 - UserProfile/AdminProfile use user_id as their key; Inventory and
   ProductVariantPrice use variant_id. There is one current price per variant,
   matching the existing diagrams, not a key per currency.
@@ -36,7 +46,7 @@ subsequent changes go in V2, V3, etc.
   remains necessary because the relationship stores percentage.
 - Enum values are stored as VARCHAR(32), using EnumType.STRING. Reordering enum
   constants does not change existing values. Renaming a constant requires a data
-  migration. Domain enum types are reused without adding JPA to domain.
+  migration. These enum types and their JPA mappings live in domain.
 - Money/discount amounts use NUMERIC(19,4), material shares NUMERIC(5,2), and
   measurements NUMERIC(10,2). PostgreSQL may round values exceeding the scale;
   application validation must reject unsupported precision before persistence.
@@ -54,9 +64,13 @@ subsequent changes go in V2, V3, etc.
   link; adding an object only to an inverse collection does not update the FK.
 - All associations request LAZY loading. Repositories/services must choose a
   fetch plan (queries, fetch joins or entity graphs) for the use case and map to
-  domain/DTO objects within the transaction. Do not serialize JPA entities as REST
-  responses or depend on open-in-view. No blanket cascade REMOVE or orphanRemoval
-  is enabled, especially for references to shared catalog/history records.
+  response DTOs within the transaction. Application services work directly with
+  the same domain/JPA objects. Do not serialize them as REST responses or depend
+  on open-in-view. References to shared catalog/history records do not cascade
+  deletion. Product.images is an owned collection with PERSIST/MERGE cascading
+  and orphanRemoval: addImage persists a new image with its product, and
+  removeImage deletes the removed image row. Other child records are explicitly
+  persisted/deleted by the use case; inverse getters expose read-only lists.
 - Slugs/codes and user email are unique across all rows, including soft-deleted
   ones. Account email normalization belongs to the application. Pending stock
   alerts have a case-insensitive partial unique index and can be subscribed to
@@ -68,14 +82,35 @@ subsequent changes go in V2, V3, etc.
   (e.g. total material share of 100%, review ownership, stock reservations and
   exactly-once callbacks) still require transactional application logic.
 
-The change from scalar foreign-key fields to JPA associations preserves the
-existing columns and constraints, so V1 is unchanged and no V2 is needed solely
-for this Java mapping change. Future physical schema changes require a new version.
+Combining the domain and persistence models preserves the existing columns and
+constraints, so the already applied V1 remains unchanged. No V2 is required solely
+for this Java refactoring. Future physical schema changes require a new version.
+CRUD repositories, application services and controllers remain the next steps.
 
-Persistence classes currently describe storage and support loading by Hibernate.
-Domain rehydration, mappers, CRUD repositories and controllers are separate next
-steps: the existing domain constructors generate new IDs and must not be used
-unchanged to restore existing records.
+## Как работать с единой моделью
+
+Модель находится в domain: например, `catalog.Category` и `catalog.Product`.
+Она содержит и аннотации JPA, и методы с бизнес-правилами. Отдельных
+`CategoryEntity` и `ProductEntity` в infrastructure больше нет.
+
+```java
+Category category = new Category("Одежда", "clothing");
+Product product = new Product(category, "Футболка", "t-shirt", Gender.UNISEX);
+```
+
+Конструктор принимает объект связанной сущности. Если известен только UUID,
+репозиторий может загрузить сущность или получить JPA-ссылку через
+`entityManager.getReference(Category.class, categoryId)` внутри транзакции.
+Это ссылка на существующую запись; создавать новую Category ради связи не нужно.
+
+При чтении Hibernate сам создаёт и заполняет Category, включая сохранённые ID
+и даты. Защищённый конструктор без параметров нужен Hibernate; публичные
+конструкторы используются для создания новых объектов. Метод restore не нужен.
+
+Путь чтения: PostgreSQL → Hibernate → Category → Application → DTO для API.
+Flyway по-прежнему читает SQL из `infrastructure/src/main/resources/db/migration`.
+Обновление Java-класса само по себе не изменяет схему: для изменения таблиц
+нужна следующая миграция, а `ddl-auto=validate` проверяет соответствие при запуске.
 
 ## Exporting a draft DDL
 

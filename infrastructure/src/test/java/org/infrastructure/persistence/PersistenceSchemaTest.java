@@ -1,19 +1,39 @@
 package org.infrastructure.persistence;
 
+import accounts.AdminProfile;
+import accounts.enums.StaffRole;
+import cart.Cart;
+import cart.CartItem;
+import cart.PromoCode;
+import cart.enums.DiscountType;
+import catalog.Collection;
+import catalog.Color;
+import catalog.Inventory;
+import catalog.ProductImage;
+import catalog.ProductVariant;
+import catalog.Size;
 import catalog.enums.Gender;
 import catalog.enums.Status;
+import content.JournalArticle;
+import content.Page;
+import discovery.Review;
+import discovery.StockAlert;
+import discovery.WishlistItem;
+import orders.Order;
+import orders.Payment;
+import orders.enums.ShippingMethod;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.flywaydb.core.Flyway;
-import org.infrastructure.persistence.accounts.UserProfileEntity;
-import org.infrastructure.persistence.accounts.UserEntity;
-import org.infrastructure.persistence.catalog.CategoryEntity;
-import org.infrastructure.persistence.catalog.ProductEntity;
-import org.infrastructure.persistence.catalog.MaterialEntity;
-import org.infrastructure.persistence.catalog.ProductMaterialEntity;
-import org.infrastructure.persistence.catalog.ProductMaterialId;
-import org.infrastructure.persistence.catalog.ProductVariantPriceEntity;
-import org.infrastructure.persistence.orders.OrderItemEntity;
+import accounts.UserProfile;
+import accounts.User;
+import catalog.Category;
+import catalog.Product;
+import catalog.Material;
+import catalog.ProductMaterial;
+import catalog.ProductMaterialId;
+import catalog.ProductVariantPrice;
+import orders.OrderItem;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +50,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -92,14 +113,14 @@ class PersistenceSchemaTest {
     @Test
     void readsPersistedIdentifiersTimestampsAndDomainEnums() {
         Catalog catalog = catalog();
-        ProductEntity product = entityManager.find(ProductEntity.class, catalog.productId());
+        Product product = entityManager.find(Product.class, catalog.productId());
         assertEquals(catalog.productId(), product.getId());
         assertNotNull(product.getCreatedAt());
         assertEquals(Gender.UNISEX, product.getGender());
         assertEquals(Status.DRAFT, product.getStatus());
         assertEquals(catalog.categoryId(), product.getCategory().getId());
         assertEquals("category", product.getCategory().getSlug());
-        assertEquals("category", entityManager.find(CategoryEntity.class, catalog.categoryId()).getSlug());
+        assertEquals("category", entityManager.find(Category.class, catalog.categoryId()).getSlug());
     }
 
     @Test
@@ -112,18 +133,18 @@ class PersistenceSchemaTest {
         jdbc.update("INSERT INTO product_variant_prices (variant_id, currency, price) VALUES (?, ?, ?)",
             catalog.variantId(), "EUR", new BigDecimal("12.3456"));
 
-        assertEquals("Customer", entityManager.find(UserProfileEntity.class, userId).getName());
-        assertEquals(userId, entityManager.find(UserProfileEntity.class, userId).getUser().getId());
-        ProductMaterialEntity composition = entityManager.find(ProductMaterialEntity.class,
+        assertEquals("Customer", entityManager.find(UserProfile.class, userId).getName());
+        assertEquals(userId, entityManager.find(UserProfile.class, userId).getUser().getId());
+        ProductMaterial composition = entityManager.find(ProductMaterial.class,
             new ProductMaterialId(catalog.productId(), catalog.materialId()));
         assertEquals(new BigDecimal("95.50"), composition.getPercentage());
         assertEquals(catalog.productId(), composition.getId().getProductId());
         assertEquals(catalog.productId(), composition.getProduct().getId());
         assertEquals(catalog.materialId(), composition.getMaterial().getId());
         assertEquals(new BigDecimal("12.3456"), entityManager
-            .find(ProductVariantPriceEntity.class, catalog.variantId()).getPrice());
+            .find(ProductVariantPrice.class, catalog.variantId()).getPrice());
         assertEquals(catalog.variantId(), entityManager
-            .find(ProductVariantPriceEntity.class, catalog.variantId()).getVariant().getId());
+            .find(ProductVariantPrice.class, catalog.variantId()).getVariant().getId());
     }
 
     @Test
@@ -138,30 +159,30 @@ class PersistenceSchemaTest {
         jdbc.update("INSERT INTO product_materials (product_id, material_id, percentage) VALUES (?, ?, ?)",
             catalog.productId(), catalog.materialId(), new BigDecimal("100.00"));
 
-        CategoryEntity category = entityManager.find(CategoryEntity.class, catalog.categoryId());
+        Category category = entityManager.find(Category.class, catalog.categoryId());
         assertEquals(childId, category.getChildren().get(0).getId());
         assertEquals(catalog.categoryId(), category.getChildren().get(0).getParent().getId());
-        ProductEntity product = category.getProducts().get(0);
+        Product product = category.getProducts().get(0);
         assertEquals(catalog.productId(), product.getId());
         assertEquals(catalog.variantId(), product.getVariants().get(0).getId());
         assertEquals("https://example.com/first.jpg", product.getImages().get(0).getUrl());
         assertEquals("Cotton", product.getMaterials().get(0).getMaterial().getName());
-        assertEquals(catalog.productId(), entityManager.find(MaterialEntity.class, catalog.materialId())
+        assertEquals(catalog.productId(), entityManager.find(Material.class, catalog.materialId())
             .getProductMaterials().get(0).getProduct().getId());
     }
 
     @Test
     void persistsCompositeLinkUsingMappedAssociations() {
         Catalog catalog = catalog();
-        ProductMaterialEntity link = new ProductMaterialEntity(
-            entityManager.getReference(ProductEntity.class, catalog.productId()),
-            entityManager.getReference(MaterialEntity.class, catalog.materialId()),
+        ProductMaterial link = new ProductMaterial(
+            entityManager.getReference(Product.class, catalog.productId()),
+            entityManager.getReference(Material.class, catalog.materialId()),
             new BigDecimal("100.00"));
         entityManager.persist(link);
         entityManager.flush();
         entityManager.clear();
 
-        ProductMaterialEntity loaded = entityManager.find(ProductMaterialEntity.class,
+        ProductMaterial loaded = entityManager.find(ProductMaterial.class,
             new ProductMaterialId(catalog.productId(), catalog.materialId()));
         assertEquals(new BigDecimal("100.00"), loaded.getPercentage());
         assertEquals("Product", loaded.getProduct().getName());
@@ -171,13 +192,134 @@ class PersistenceSchemaTest {
     @Test
     void derivesSharedPrimaryKeyFromOneToOneAssociation() {
         UUID userId = user();
-        UserProfileEntity profile = new UserProfileEntity(
-            entityManager.getReference(UserEntity.class, userId), "Customer", null);
+        UserProfile profile = new UserProfile(
+            entityManager.getReference(User.class, userId), "Customer", null);
         entityManager.persist(profile);
         entityManager.flush();
         assertEquals(userId, profile.getUserId());
         entityManager.clear();
-        assertEquals(userId, entityManager.find(UserProfileEntity.class, userId).getUser().getId());
+        assertEquals(userId, entityManager.find(UserProfile.class, userId).getUser().getId());
+    }
+
+    @Test
+    void persistsCatalogDomainModelsAndUpdatesTheSameIdentity() {
+        Category category = new Category("Clothing", "clothing");
+        Category child = new Category("T-Shirts", "t-shirts", category);
+        Collection collection = new Collection("Essentials", "essentials");
+        Color color = new Color("Black", "BLACK");
+        Size size = new Size("M", "Medium", 1);
+        Material material = new Material("Cotton", "COTTON");
+        Product product = new Product(child, "T-Shirt", "t-shirt", Gender.UNISEX);
+        product.setCollection(collection);
+        product.setModelSize(size);
+        ProductVariant variant = new ProductVariant(product, color, size, "TEE-BLACK-M");
+        Inventory inventory = new Inventory(variant, 5);
+        ProductVariantPrice price = new ProductVariantPrice(variant, "EUR", new BigDecimal("25.50"));
+        ProductMaterial composition = new ProductMaterial(product, material, new BigDecimal("100"));
+        ProductImage image = new ProductImage("https://example.com/front.jpg", "Front", 0, product);
+        image.setColor(color);
+        product.addImage(image);
+
+        for (Object model : new Object[] {category, child, collection, color, size, material,
+                product, variant, inventory, price, composition}) {
+            entityManager.persist(model);
+        }
+        UUID productId = product.getId();
+        Instant createdAt = product.getCreatedAt();
+        entityManager.flush();
+        entityManager.clear();
+
+        Product loaded = entityManager.find(Product.class, productId);
+        assertEquals(productId, loaded.getId());
+        assertTrue(Duration.between(createdAt, loaded.getCreatedAt()).abs().toNanos() < 1000);
+        assertEquals(category.getId(), loaded.getCategory().getParent().getId());
+        assertEquals(collection.getId(), loaded.getCollection().getId());
+        assertEquals(size.getId(), loaded.getModelSize().getId());
+        assertEquals(image.getId(), loaded.getImages().get(0).getId());
+        assertEquals(variant.getId(), loaded.getVariants().get(0).getId());
+        assertEquals(material.getId(), loaded.getMaterials().get(0).getMaterial().getId());
+        assertEquals(variant.getId(), entityManager.find(Inventory.class, variant.getId()).getVariantId());
+        assertEquals(new BigDecimal("25.5000"),
+            entityManager.find(ProductVariantPrice.class, variant.getId()).getPrice());
+
+        Instant previousUpdate = loaded.getUpdatedAt();
+        loaded.setName("Updated T-Shirt");
+        entityManager.flush();
+        entityManager.clear();
+
+        Product updated = entityManager.find(Product.class, productId);
+        assertEquals("Updated T-Shirt", updated.getName());
+        assertTrue(updated.getUpdatedAt().isAfter(previousUpdate));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM products", Integer.class));
+    }
+
+    @Test
+    void persistsAccountsCartOrdersDiscoveryAndContentUsingTheSameModels() {
+        Catalog catalog = catalog();
+        Product product = entityManager.getReference(Product.class, catalog.productId());
+        ProductVariant variant = entityManager.getReference(ProductVariant.class, catalog.variantId());
+        User user = new User("customer@example.com", "test-hash");
+        UserProfile profile = new UserProfile(user, "Customer", "+361234567");
+        AdminProfile admin = new AdminProfile(user, "Administrator", StaffRole.values()[0]);
+        PromoCode promo = new PromoCode("WELCOME", DiscountType.values()[0], BigDecimal.TEN, Instant.now());
+        Cart cart = Cart.forUser(user);
+        cart.setPromoCode(promo);
+        CartItem cartItem = new CartItem(cart, variant, 2);
+        Order order = new Order("ORDER-DOMAIN", user.getEmail(), "Customer", "+361234567", "HU",
+            "Budapest", "1000", "Address", ShippingMethod.COURIER, "EUR", BigDecimal.TEN,
+            BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.TEN, Instant.now().plusSeconds(900));
+        order.setUser(user);
+        order.setPromoCode(promo);
+        OrderItem item = new OrderItem(order, variant, "SKU-1", "Purchased product", "Black", "M",
+            BigDecimal.TEN, 1, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.TEN);
+        Payment payment = new Payment(order, "test-provider", BigDecimal.TEN, "EUR");
+        WishlistItem wish = new WishlistItem(user, product);
+        Review review = new Review(user, product, item, 5, "Good product");
+        StockAlert alert = new StockAlert(variant, user.getEmail());
+        Page page = new Page("delivery", "Delivery", "Delivery information");
+        JournalArticle article = new JournalArticle("news", "News", "Article content");
+
+        for (Object model : new Object[] {user, profile, admin, promo, cart, cartItem, order,
+                item, payment, wish, review, alert, page, article}) {
+            entityManager.persist(model);
+        }
+        entityManager.flush();
+        entityManager.clear();
+
+        assertEquals(user.getId(), entityManager.find(UserProfile.class, user.getId()).getUser().getId());
+        assertTrue(entityManager.find(AdminProfile.class, user.getId()).isActive());
+        Cart loadedCart = entityManager.find(Cart.class, cart.getId());
+        assertEquals(user.getId(), loadedCart.getUser().getId());
+        assertEquals(promo.getId(), loadedCart.getPromoCode().getId());
+        assertEquals(2, loadedCart.getItems().get(0).getQuantity());
+        Order loadedOrder = entityManager.find(Order.class, order.getId());
+        assertEquals(item.getId(), loadedOrder.getItems().get(0).getId());
+        assertEquals(payment.getId(), loadedOrder.getPayments().get(0).getId());
+        assertEquals("Purchased product", loadedOrder.getItems().get(0).getProductNameSnapshot());
+        assertEquals(product.getId(), entityManager.find(WishlistItem.class, wish.getId()).getProduct().getId());
+        assertEquals(item.getId(), entityManager.find(Review.class, review.getId()).getOrderItem().getId());
+        assertEquals(variant.getId(), entityManager.find(StockAlert.class, alert.getId()).getVariant().getId());
+        assertEquals("Delivery information", entityManager.find(Page.class, page.getId()).getContent());
+        assertEquals("Article content", entityManager.find(JournalArticle.class, article.getId()).getContent());
+    }
+
+    @Test
+    void removingGalleryImagePersistsRemovalWithoutDeletingTheProduct() {
+        Catalog catalog = catalog();
+        Product product = entityManager.find(Product.class, catalog.productId());
+        ProductImage image = new ProductImage("https://example.com/front.jpg", "Front", 0, product);
+        product.addImage(image);
+        entityManager.flush();
+        entityManager.clear();
+
+        Product loaded = entityManager.find(Product.class, catalog.productId());
+        loaded.removeImage(image.getId());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertNull(entityManager.find(ProductImage.class, image.getId()));
+        assertNotNull(entityManager.find(Product.class, catalog.productId()));
+        assertTrue(entityManager.find(Product.class, catalog.productId()).getImages().isEmpty());
     }
 
     @Test
@@ -243,7 +385,7 @@ class PersistenceSchemaTest {
             orderId, catalog.variantId(), "SKU-1", "Purchased name", "Black", "M", BigDecimal.TEN, 1,
             BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.TEN);
         jdbc.update("DELETE FROM product_variants WHERE id = ?", catalog.variantId());
-        OrderItemEntity item = entityManager.find(OrderItemEntity.class, itemId);
+        OrderItem item = entityManager.find(OrderItem.class, itemId);
         assertNull(item.getVariant());
         assertEquals("Purchased name", item.getProductNameSnapshot());
         assertEquals(new BigDecimal("10.0000"), item.getUnitPrice());

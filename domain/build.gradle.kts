@@ -1,5 +1,6 @@
 plugins {
     id("java")
+    id("io.spring.dependency-management")
 }
 
 group = "org.example"
@@ -15,9 +16,17 @@ repositories {
     mavenCentral()
 }
 
+dependencyManagement {
+    imports {
+        mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+    }
+}
+
 dependencies {
-    compileOnly("org.projectlombok:lombok:1.18.48")
-    annotationProcessor("org.projectlombok:lombok:1.18.48")
+    implementation("jakarta.persistence:jakarta.persistence-api")
+    implementation("org.hibernate.orm:hibernate-core")
+    compileOnly("org.projectlombok:lombok")
+    annotationProcessor("org.projectlombok:lombok")
 
     testImplementation(platform("org.junit:junit-bom:6.0.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
