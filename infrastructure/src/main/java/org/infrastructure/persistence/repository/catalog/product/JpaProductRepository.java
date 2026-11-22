@@ -23,10 +23,10 @@ public class JpaProductRepository implements ProductRepository {
     public JpaProductRepository (SpringDataProductRepository repository){
         this.repository = repository;
     }
-
+    @Override
     public Product save(Product product)
     {return repository.save(product);}
-
+    @Override
     public Optional<Product> findById(UUID id){
         return repository.findByIdAndDeletedFalse(id);
     }
