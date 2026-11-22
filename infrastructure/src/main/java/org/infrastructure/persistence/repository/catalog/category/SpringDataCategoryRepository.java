@@ -1,4 +1,4 @@
-package org.infrastructure.persistence.repository.catalog;
+package org.infrastructure.persistence.repository.catalog.category;
 
 import catalog.Category;
 import org.springframework.data.jpa.repository.JpaRepository;
