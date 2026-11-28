@@ -1,16 +1,14 @@
 package org.application.catalog.service;
 
 import catalog.Category;
-import common.BaseEntity;
-import org.application.catalog.command.CreateCategoryCommand;
-import org.application.catalog.command.UpdateCategoryCommand;
-import org.application.catalog.dto.CategoryResult;
+import org.application.catalog.command.category.CreateCategoryCommand;
+import org.application.catalog.command.category.UpdateCategoryCommand;
+import org.application.catalog.dto.category.CategoryResult;
 import org.application.catalog.repository.CategoryRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Service

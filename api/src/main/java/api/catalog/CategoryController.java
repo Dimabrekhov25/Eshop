@@ -1,9 +1,9 @@
 package api.catalog;
 
 import api.catalog.dto.CategoryRequest;
-import org.application.catalog.command.CreateCategoryCommand;
-import org.application.catalog.command.UpdateCategoryCommand;
-import org.application.catalog.dto.CategoryResult;
+import org.application.catalog.command.category.CreateCategoryCommand;
+import org.application.catalog.command.category.UpdateCategoryCommand;
+import org.application.catalog.dto.category.CategoryResult;
 import org.application.catalog.service.CategoryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

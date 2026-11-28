@@ -1,4 +1,4 @@
-package org.application.catalog.dto;
+package org.application.catalog.dto.product;
 
 import java.util.List;
 
