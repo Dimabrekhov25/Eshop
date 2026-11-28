@@ -1,6 +1,4 @@
-package org.application.catalog.command;
-
-import catalog.Category;
+package org.application.catalog.command.category;
 
 import java.util.UUID;
 

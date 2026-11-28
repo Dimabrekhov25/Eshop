@@ -1,6 +1,4 @@
-package org.application.catalog.dto;
-
-import catalog.Category;
+package org.application.catalog.dto.category;
 
 import java.util.UUID;
 

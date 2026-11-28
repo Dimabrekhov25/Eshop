@@ -2,9 +2,9 @@ package org.infrastructure.persistence.repository.catalog.product;
 
 import catalog.Product;
 import catalog.enums.Status;
-import org.application.catalog.dto.PageQuery;
-import org.application.catalog.dto.PageResult;
-import org.application.catalog.dto.ProductListItem;
+import org.application.catalog.dto.product.PageQuery;
+import org.application.catalog.dto.product.PageResult;
+import org.application.catalog.dto.product.ProductListItem;
 import org.application.catalog.repository.ProductRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

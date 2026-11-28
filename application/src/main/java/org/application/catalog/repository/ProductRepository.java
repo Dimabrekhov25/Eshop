@@ -1,9 +1,9 @@
 package org.application.catalog.repository;
 
 import catalog.Product;
-import org.application.catalog.dto.PageQuery;
-import org.application.catalog.dto.PageResult;
-import org.application.catalog.dto.ProductListItem;
+import org.application.catalog.dto.product.PageQuery;
+import org.application.catalog.dto.product.PageResult;
+import org.application.catalog.dto.product.ProductListItem;
 
 import java.util.Optional;
 import java.util.UUID;

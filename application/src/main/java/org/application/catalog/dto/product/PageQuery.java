@@ -1,6 +1,4 @@
-package org.application.catalog.dto;
-
-import java.util.List;
+package org.application.catalog.dto.product;
 
 public record PageQuery<T>(
      int page,
